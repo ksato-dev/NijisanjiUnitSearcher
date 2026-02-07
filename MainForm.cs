@@ -23,6 +23,8 @@ namespace NijisanjiUnitSearcher
         private Label lblStatus = null!;
         private TextBox txtDetail = null!;
         private ToolTip toolTip = null!;
+        private Label lblComboResults = null!;
+        private ListView lvComboResults = null!;
 
         public MainForm()
         {
@@ -33,7 +35,7 @@ namespace NijisanjiUnitSearcher
         private void InitializeComponent()
         {
             this.Text = "にじさんじユニット検索";
-            this.Size = new Size(950, 700);
+            this.Size = new Size(1050, 900);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.Font = new Font("Yu Gothic UI", 10);
 
@@ -163,11 +165,32 @@ namespace NijisanjiUnitSearcher
                 ReshowDelay = 100
             };
 
+            // === 組み合わせコラボ結果 ===
+            lblComboResults = new Label
+            {
+                Text = "組み合わせコラボ（選択メンバー内で構成可能）:",
+                Location = new Point(10, 465),
+                AutoSize = true
+            };
+
+            lvComboResults = new ListView
+            {
+                Location = new Point(10, 490),
+                Size = new Size(600, 200),
+                View = View.Details,
+                FullRowSelect = true,
+                GridLines = true
+            };
+            lvComboResults.Columns.Add("コラボ名", 200);
+            lvComboResults.Columns.Add("メンバー", 380);
+            lvComboResults.SelectedIndexChanged += LvComboResults_SelectedIndexChanged;
+            lvComboResults.MouseMove += LvComboResults_MouseMove;
+
             // 詳細表示エリア
             var lblDetail = new Label
             {
                 Text = "メンバー詳細（項目を選択）:",
-                Location = new Point(10, 465),
+                Location = new Point(10, 700),
                 AutoSize = true
             };
 
@@ -188,7 +211,7 @@ namespace NijisanjiUnitSearcher
                 Text = ""
             };
 
-            pnlRight.Controls.AddRange(new Control[] { lblResults, lvResults, lblDetail, txtDetail, lblStatus });
+            pnlRight.Controls.AddRange(new Control[] { lblResults, lvResults, lblComboResults, lvComboResults, lblDetail, txtDetail, lblStatus });
 
             // フォームにパネルを追加
             this.Controls.Add(pnlRight);
@@ -233,12 +256,19 @@ namespace NijisanjiUnitSearcher
             btnRemove.Top = lstSelected.Bottom + 10;
             btnClear.Top = lstSelected.Bottom + 10;
 
-            // 右パネルのレイアウト調整
+            // 右パネルのレイアウト調整（検索結果・組み合わせの2段＋詳細）
             int rightWidth = this.ClientSize.Width - leftPanelWidth - 30;
+            int totalListHeight = Math.Max(100, this.ClientSize.Height - 240);
+            int halfList = totalListHeight / 2;
+
             lvResults.Width = rightWidth;
-            lvResults.Height = this.ClientSize.Height - 230;
-            
-            // 詳細エリアの位置調整
+            lvResults.Height = halfList - 30;
+
+            lblComboResults.Top = lvResults.Bottom + 10;
+            lvComboResults.Top = lvResults.Bottom + 35;
+            lvComboResults.Width = rightWidth;
+            lvComboResults.Height = halfList - 30;
+
             foreach (Control c in this.Controls)
             {
                 if (c is Panel pnl && pnl.Dock == DockStyle.Fill)
@@ -247,21 +277,21 @@ namespace NijisanjiUnitSearcher
                     {
                         if (ctrl is Label lbl && lbl.Text.StartsWith("メンバー詳細"))
                         {
-                            lbl.Top = lvResults.Bottom + 10;
+                            lbl.Top = lvComboResults.Bottom + 10;
                         }
                     }
                     break;
                 }
             }
-            
-            txtDetail.Top = lvResults.Bottom + 35;
+
+            txtDetail.Top = lvComboResults.Bottom + 35;
             txtDetail.Width = rightWidth;
             lblStatus.Top = txtDetail.Bottom + 10;
 
             if (lvResults.Columns.Count >= 2)
-            {
                 lvResults.Columns[1].Width = lvResults.Width - lvResults.Columns[0].Width - 25;
-            }
+            if (lvComboResults.Columns.Count >= 2)
+                lvComboResults.Columns[1].Width = lvComboResults.Width - lvComboResults.Columns[0].Width - 25;
         }
 
         private void LoadData()
@@ -489,6 +519,8 @@ namespace NijisanjiUnitSearcher
         {
             lstSelected.Items.Clear();
             lvResults.Items.Clear();
+            lvComboResults.Items.Clear();
+            txtDetail.Clear();
             txtSearch.Clear();
             txtSearch.Focus();
             lblStatus.Text = $"メンバー: {allMembers.Count}人 / コラボ: {collabs.Count}件";
@@ -496,21 +528,23 @@ namespace NijisanjiUnitSearcher
 
         private void SearchCollabs()
         {
+            lvResults.Items.Clear();
+            lvComboResults.Items.Clear();
+
             if (lstSelected.Items.Count == 0)
             {
-                lvResults.Items.Clear();
                 lblStatus.Text = $"メンバー: {allMembers.Count}人 / コラボ: {collabs.Count}件";
                 return;
             }
 
             var selectedMembers = lstSelected.Items.Cast<string>().ToList();
+            var selectedSet = new HashSet<string>(selectedMembers, StringComparer.OrdinalIgnoreCase);
 
+            // 検索結果：選択メンバー全員を含むコラボ
             var matchingCollabs = collabs
                 .Where(c => selectedMembers.All(m => c.Members.Any(cm => cm.Equals(m, StringComparison.OrdinalIgnoreCase))))
                 .OrderBy(c => c.CollabName)
                 .ToList();
-
-            lvResults.Items.Clear();
 
             foreach (var collab in matchingCollabs)
             {
@@ -519,7 +553,20 @@ namespace NijisanjiUnitSearcher
                 lvResults.Items.Add(item);
             }
 
-            lblStatus.Text = $"検索結果: {matchingCollabs.Count}件 （選択: {string.Join(", ", selectedMembers)}）";
+            // 組み合わせコラボ：メンバーがすべて選択メンバー内に含まれるコラボ（全員使わなくてOK）
+            var comboCollabs = collabs
+                .Where(c => c.Members.Count >= 1 && c.Members.All(cm => selectedSet.Contains(cm)))
+                .OrderBy(c => c.CollabName)
+                .ToList();
+
+            foreach (var collab in comboCollabs)
+            {
+                var item = new ListViewItem(collab.CollabName);
+                item.SubItems.Add(string.Join(", ", collab.Members));
+                lvComboResults.Items.Add(item);
+            }
+
+            lblStatus.Text = $"検索結果: {matchingCollabs.Count}件 / 組み合わせ: {comboCollabs.Count}件 （選択: {string.Join(", ", selectedMembers)}）";
         }
 
         private void LvResults_SelectedIndexChanged(object? sender, EventArgs e)
@@ -538,6 +585,7 @@ namespace NijisanjiUnitSearcher
         }
 
         private int lastHoveredIndex = -1;
+        private int lastHoveredIndexCombo = -1;
 
         private void LvResults_MouseMove(object? sender, MouseEventArgs e)
         {
@@ -558,6 +606,47 @@ namespace NijisanjiUnitSearcher
                 {
                     lastHoveredIndex = -1;
                     toolTip.SetToolTip(lvResults, "");
+                }
+            }
+        }
+
+        private void LvComboResults_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            if (lvComboResults.SelectedItems.Count > 0)
+            {
+                var item = lvComboResults.SelectedItems[0];
+                txtDetail.Text = $"【{item.Text}】\r\n{item.SubItems[1].Text}";
+            }
+            else if (lvResults.SelectedItems.Count > 0)
+            {
+                var item = lvResults.SelectedItems[0];
+                txtDetail.Text = $"【{item.Text}】\r\n{item.SubItems[1].Text}";
+            }
+            else
+            {
+                txtDetail.Text = "";
+            }
+        }
+
+        private void LvComboResults_MouseMove(object? sender, MouseEventArgs e)
+        {
+            var hit = lvComboResults.HitTest(e.Location);
+            if (hit.Item != null)
+            {
+                int index = hit.Item.Index;
+                if (index != lastHoveredIndexCombo)
+                {
+                    lastHoveredIndexCombo = index;
+                    string members = hit.Item.SubItems[1].Text;
+                    toolTip.SetToolTip(lvComboResults, $"【{hit.Item.Text}】\n{members}");
+                }
+            }
+            else
+            {
+                if (lastHoveredIndexCombo != -1)
+                {
+                    lastHoveredIndexCombo = -1;
+                    toolTip.SetToolTip(lvComboResults, "");
                 }
             }
         }
