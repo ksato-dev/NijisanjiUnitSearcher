@@ -23,14 +23,25 @@ print(f'テーブル行数: {len(rows)}')
 
 for row in rows:
     # コラボ名を抽出
-    # パターン: width:182px;</a>"&gt;</span><span>コラボ名</span>
+    # パターン1: width:182px;</a>"&gt;</span><span>コラボ名</span> (通常)
+    # パターン2: width:182px;</a>"&gt;</span><span></span><span>&lt;...ruby...&gt;</span><span>コラボ名</span> (ruby付き)
+    collab_name = None
+    
+    # 通常パターン
     collab_pattern = re.compile(r'width:182px;</a>"&gt;</span><span>([^<]+)</span>')
     collab_match = collab_pattern.search(row)
     
-    if not collab_match:
-        continue
+    if collab_match and collab_match.group(1).strip():
+        collab_name = collab_match.group(1).strip()
+    else:
+        # rubyパターン: <ruby>タグ内のテキスト
+        ruby_pattern = re.compile(r'width:182px;</a>"&gt;</span><span></span><span>&lt;<span class="start-tag">ruby</span>&gt;</span><span>([^<]+)</span>')
+        ruby_match = ruby_pattern.search(row)
+        if ruby_match:
+            collab_name = ruby_match.group(1).strip()
     
-    collab_name = collab_match.group(1).strip()
+    if not collab_name:
+        continue
     
     # ヘッダー行をスキップ
     if collab_name in ['コラボ名', '人数', '詳細', 'メンバー', '']:
