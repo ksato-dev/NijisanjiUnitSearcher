@@ -1,0 +1,18 @@
+# Build results
+bin/
+obj/
+publish/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# IDE
+.idea/
+*.swp
